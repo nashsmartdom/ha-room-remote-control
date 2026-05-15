@@ -47,10 +47,13 @@ def remote_name_from_device(hass: HomeAssistant, device_id: str | None) -> str:
     device = registry.async_get(device_id)
     if not device:
         return ""
+    name = str(device.name_by_user or device.name or "").strip()
+    if name:
+        return name
     for _, identifier in device.identifiers:
         if identifier:
-            return str(identifier).split("/")[-1]
-    return str(device.name_by_user or device.name or "").strip()
+            return str(identifier).split("/")[-1].removeprefix("zigbee2mqtt_")
+    return ""
 
 
 def remote_name(hass: HomeAssistant, data: dict[str, Any]) -> str:
@@ -71,9 +74,16 @@ def action_topics(hass: HomeAssistant, data: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(topics))
 
 
-def bridge_devices_topic(data: dict[str, Any]) -> str | None:
+def bridge_devices_topics(data: dict[str, Any]) -> list[str]:
     base = base_topic(data)
-    return f"{base}/bridge/devices" if base else None
+    if not base:
+        return []
+    return [f"{base}/bridge/devices", f"{base}/bridge/response/devices"]
+
+
+def bridge_request_devices_topic(data: dict[str, Any]) -> str | None:
+    base = base_topic(data)
+    return f"{base}/bridge/request/devices" if base else None
 
 
 def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
@@ -135,11 +145,15 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
         store["unsub"].append(unsub)
         _LOGGER.info("Room Remote Control subscribed to %s", topic)
 
-    bridge_topic = bridge_devices_topic(data)
-    if bridge_topic:
-        unsub = await mqtt.async_subscribe(hass, bridge_topic, make_bridge_devices_handler(hass, entry.entry_id), 0)
+    for topic in bridge_devices_topics(data):
+        unsub = await mqtt.async_subscribe(hass, topic, make_bridge_devices_handler(hass, entry.entry_id), 0)
         store["unsub"].append(unsub)
-        _LOGGER.info("Room Remote Control subscribed to %s", bridge_topic)
+        _LOGGER.info("Room Remote Control subscribed to %s", topic)
+
+    request_topic = bridge_request_devices_topic(data)
+    if request_topic:
+        await mqtt.async_publish(hass, request_topic, "{}", 0, False)
+        _LOGGER.info("Room Remote Control requested Zigbee2MQTT devices via %s", request_topic)
 
     entry.async_on_unload(entry.add_update_listener(async_update_listener))
     return True
