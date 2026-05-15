@@ -1,0 +1,1 @@
+{"domain":"room_remote_control","name":"Room Remote Control","codeowners":["@nashsmartdom"],"config_flow":true,"dependencies":["mqtt"],"documentation":"https://github.com/nashsmartdom/ha-room-remote-control","iot_class":"local_push","issue_tracker":"https://github.com/nashsmartdom/ha-room-remote-control/issues","requirements":[],"version":"0.2.0"}
