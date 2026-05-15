@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import mqtt
-from homeassistant.const import CONF_ENTITIES, CONF_ENTITY_ID
+from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
@@ -16,6 +16,7 @@ from .const import (
     CONF_ACTIONS,
     CONF_BRIGHTNESS_CYCLE,
     CONF_EFFECTS,
+    CONF_ENTITIES,
     CONF_EXTRA_OFF,
     CONF_LAMPS,
     CONF_REMOTES,
@@ -51,7 +52,10 @@ CONFIG_SCHEMA = vol.Schema(
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     conf = config.get(DOMAIN, {})
     remotes: dict[str, dict[str, Any]] = conf.get(CONF_REMOTES, {})
-    data = hass.data.setdefault(DOMAIN, {"remotes": {}, "unsub": [], "effect_index": {}})
+    data = hass.data.setdefault(
+        DOMAIN,
+        {"remotes": {}, "unsub": [], "effect_index": {}, "brightness_index": {}},
+    )
 
     for remote_name, remote_conf in remotes.items():
         data["remotes"][remote_name] = {
@@ -59,6 +63,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "active_lamps": list(remote_conf.get(CONF_LAMPS, [])),
         }
         data["effect_index"][remote_name] = 0
+        data["brightness_index"].setdefault(remote_name, {})
 
         for topic in remote_conf.get(CONF_TOPICS, []):
             unsub = await mqtt.async_subscribe(
@@ -126,14 +131,14 @@ async def _handle_action(hass: HomeAssistant, remote_name: str, action: str) -> 
     if not action_conf:
         _LOGGER.debug("Room Remote Control: unmapped action %s for %s", action, remote_name)
         return
-    await _execute_action(hass, remote_name, action_conf)
+    await _execute_action(hass, remote_name, action, action_conf)
 
 async def _run_builtin(hass: HomeAssistant, remote_name: str | None, action_type: str) -> None:
     names = [remote_name] if remote_name else list(hass.data[DOMAIN]["remotes"].keys())
     for name in names:
-        await _execute_action(hass, name, {"type": action_type})
+        await _execute_action(hass, name, action_type, {"type": action_type})
 
-async def _execute_action(hass: HomeAssistant, remote_name: str, action_conf: dict[str, Any]) -> None:
+async def _execute_action(hass: HomeAssistant, remote_name: str, action_key: str, action_conf: dict[str, Any]) -> None:
     remote = hass.data[DOMAIN]["remotes"].get(remote_name)
     if not remote:
         return
@@ -141,8 +146,8 @@ async def _execute_action(hass: HomeAssistant, remote_name: str, action_conf: di
     action_type = action_conf.get("type")
 
     if action_type == "cycle_brightness":
-        entities = action_conf.get(CONF_ENTITIES, [])
-        pct = _next_brightness(hass, action_conf.get("brightness_source") or (entities[0] if entities else None), conf)
+        entities = list(action_conf.get(CONF_ENTITIES, []))
+        pct = _next_brightness(hass, remote_name, action_key, conf)
         await _turn_on(hass, entities, brightness_pct=pct, color_temp=action_conf.get("color_temp"))
         if action_conf.get("remember", True):
             remote["active_lamps"] = list(entities)
@@ -180,19 +185,15 @@ async def _execute_action(hass: HomeAssistant, remote_name: str, action_conf: di
 
     _LOGGER.warning("Room Remote Control: unknown action type %s", action_type)
 
-def _next_brightness(hass: HomeAssistant, source: str | None, conf: dict[str, Any]) -> int:
-    cycle = conf.get(CONF_BRIGHTNESS_CYCLE, DEFAULT_BRIGHTNESS_CYCLE)
-    current = None
-    if source:
-        state = hass.states.get(source)
-        if state and state.attributes.get("brightness") is not None:
-            current = round(int(state.attributes["brightness"]) * 100 / 255)
-    if current is None:
-        return cycle[0]
-    for pct in cycle:
-        if current < pct:
-            return pct
-    return cycle[0]
+def _next_brightness(hass: HomeAssistant, remote_name: str, action_key: str, conf: dict[str, Any]) -> int:
+    cycle = list(conf.get(CONF_BRIGHTNESS_CYCLE, DEFAULT_BRIGHTNESS_CYCLE))
+    if not cycle:
+        cycle = DEFAULT_BRIGHTNESS_CYCLE
+    indexes = hass.data[DOMAIN]["brightness_index"].setdefault(remote_name, {})
+    index = indexes.get(action_key, 0)
+    pct = cycle[index % len(cycle)]
+    indexes[action_key] = index + 1
+    return pct
 
 async def _turn_on(hass: HomeAssistant, entities: list[str], **kwargs: Any) -> None:
     if not entities:
