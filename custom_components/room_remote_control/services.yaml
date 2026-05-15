@@ -1,0 +1,39 @@
+all_on:
+  name: All on
+  description: Turn on lamps for one remote or all remotes.
+  fields:
+    remote:
+      name: Remote
+      description: Optional remote name.
+      required: false
+      example: alisa_spinne
+      selector:
+        text:
+
+all_off:
+  name: All off
+  description: Turn off lamps for one remote or all remotes, including extra_off entities.
+  fields:
+    remote:
+      name: Remote
+      description: Optional remote name.
+      required: false
+      example: alisa_spinne
+      selector:
+        text:
+
+next_effect:
+  name: Next effect
+  description: Apply next configured effect to remembered active lamps.
+  fields:
+    remote:
+      name: Remote
+      description: Optional remote name.
+      required: false
+      example: alisa_spinne
+      selector:
+        text:
+
+reload:
+  name: Reload
+  description: Placeholder. YAML configuration reload currently requires Home Assistant restart.
