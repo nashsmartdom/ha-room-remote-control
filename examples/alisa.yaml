@@ -1,0 +1,121 @@
+room_remote_control:
+  remotes:
+    alisa_spinne:
+      topics:
+        - zigbee2mqtt/licht_alisa
+        - zigbee2mqtt/licht_alisa/action
+
+      lamps:
+        - light.wiz_3       # Кровать
+        - light.wiz_7       # Стол
+        - light.wiz_al_1    # Шкаф
+        - light.wiz_4       # Кресло
+
+      extra_off:
+        - light.hochbett    # Лента Hochbett, только в общее выключение
+
+      brightness_cycle:
+        - 30
+        - 10
+        - 100
+        - 80
+
+      effects:
+        - effect: Warm white
+          brightness_pct: 80
+          color_temp: 435
+        - effect: Daylight
+          brightness_pct: 100
+        - effect: Candlelight
+          brightness_pct: 25
+
+      actions:
+        on:
+          type: cycle_brightness
+          entities:
+            - light.wiz_3
+          brightness_source: light.wiz_3
+          remember: true
+
+        brightness_move_up:
+          type: all_on
+          brightness_pct: 80
+          color_temp: 435
+          remember: true
+        brightness_step_up:
+          type: all_on
+          brightness_pct: 80
+          color_temp: 435
+          remember: true
+        arrow_up_click:
+          type: all_on
+          brightness_pct: 80
+          color_temp: 435
+          remember: true
+        up:
+          type: all_on
+          brightness_pct: 80
+          color_temp: 435
+          remember: true
+
+        arrow_left_click:
+          type: cycle_brightness
+          entities:
+            - light.wiz_7
+          brightness_source: light.wiz_7
+          remember: true
+
+        arrow_right_click:
+          type: cycle_brightness
+          entities:
+            - light.wiz_al_1
+            - light.wiz_4
+          brightness_source: light.wiz_al_1
+          remember: true
+
+        brightness_move_down:
+          type: turn_off
+          entities:
+            - light.wiz_al_1
+            - light.wiz_3
+            - light.wiz_4
+            - light.wiz_7
+          include_extra_off: true
+        brightness_step_down:
+          type: turn_off
+          entities:
+            - light.wiz_al_1
+            - light.wiz_3
+            - light.wiz_4
+            - light.wiz_7
+          include_extra_off: true
+        arrow_down_click:
+          type: turn_off
+          entities:
+            - light.wiz_al_1
+            - light.wiz_3
+            - light.wiz_4
+            - light.wiz_7
+          include_extra_off: true
+        down:
+          type: turn_off
+          entities:
+            - light.wiz_al_1
+            - light.wiz_3
+            - light.wiz_4
+            - light.wiz_7
+          include_extra_off: true
+        off_hold:
+          type: turn_off
+          entities:
+            - light.wiz_al_1
+            - light.wiz_3
+            - light.wiz_4
+            - light.wiz_7
+          include_extra_off: true
+        off:
+          type: all_off
+
+        arrow_right_hold:
+          type: next_effect
+          target: remembered
