@@ -10,6 +10,7 @@ from homeassistant.helpers import selector
 
 from .const import DOMAIN
 
+CONF_REMOTE_DEVICE_ID = "remote_device_id"
 CONF_MQTT_BASE_TOPIC = "mqtt_base_topic"
 CONF_REMOTE_FRIENDLY_NAME = "remote_friendly_name"
 CONF_TOPICS_TEXT = "topics_text"
@@ -57,8 +58,9 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default="Room remote"): str,
+                vol.Optional(CONF_REMOTE_DEVICE_ID): selector.DeviceSelector(),
                 vol.Required(CONF_MQTT_BASE_TOPIC, default="zigbee2mqtt"): str,
-                vol.Required(CONF_REMOTE_FRIENDLY_NAME, default="remote_name"): str,
+                vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=""): str,
                 vol.Optional(CONF_TOPICS_TEXT, default=""): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required(CONF_LIGHTS, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
                 vol.Optional(CONF_EXTRA_OFF, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
@@ -90,8 +92,9 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Optional(CONF_REMOTE_DEVICE_ID, default=data.get(CONF_REMOTE_DEVICE_ID)): selector.DeviceSelector(),
                 vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
-                vol.Required(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
+                vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
                 vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required(CONF_LIGHTS, default=data.get(CONF_LIGHTS, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
                 vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
