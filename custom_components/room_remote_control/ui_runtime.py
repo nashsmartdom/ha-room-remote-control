@@ -17,6 +17,7 @@ from .config_flow import (
     CONF_TOPICS_TEXT,
 )
 from .const import DOMAIN
+from .z2m import actions_from_bridge_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,15 +34,28 @@ def ints(text: str) -> list[int]:
     return [int(x.strip()) for x in str(text or "").split(",") if x.strip()]
 
 
-def topics_from_config(data: dict[str, Any]) -> list[str]:
+def base_topic(data: dict[str, Any]) -> str:
+    return str(data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")).strip().strip("/")
+
+
+def remote_name(data: dict[str, Any]) -> str:
+    return str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
+
+
+def action_topics(data: dict[str, Any]) -> list[str]:
     topics: list[str] = []
-    base = str(data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")).strip().strip("/")
-    remote = str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
+    base = base_topic(data)
+    remote = remote_name(data)
     if base and remote:
         topics.append(f"{base}/{remote}")
         topics.append(f"{base}/{remote}/action")
     topics.extend(lines(data.get(CONF_TOPICS_TEXT, "")))
     return list(dict.fromkeys(topics))
+
+
+def bridge_devices_topic(data: dict[str, Any]) -> str | None:
+    base = base_topic(data)
+    return f"{base}/bridge/devices" if base else None
 
 
 def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
@@ -92,13 +106,21 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
         "active": list(data.get(CONF_LIGHTS, [])),
         "buttons": parse_buttons(data.get(CONF_BUTTONS_TEXT, "")),
         "idx": {},
+        "remote": remote_name(data),
+        "discovered_actions": [],
     }
     root["entries"][entry.entry_id] = store
 
-    for topic in topics_from_config(data):
-        unsub = await mqtt.async_subscribe(hass, topic, make_handler(hass, entry.entry_id), 0)
+    for topic in action_topics(data):
+        unsub = await mqtt.async_subscribe(hass, topic, make_action_handler(hass, entry.entry_id), 0)
         store["unsub"].append(unsub)
         _LOGGER.info("Room Remote Control subscribed to %s", topic)
+
+    bridge_topic = bridge_devices_topic(data)
+    if bridge_topic:
+        unsub = await mqtt.async_subscribe(hass, bridge_topic, make_bridge_devices_handler(hass, entry.entry_id), 0)
+        store["unsub"].append(unsub)
+        _LOGGER.info("Room Remote Control subscribed to %s", bridge_topic)
 
     entry.async_on_unload(entry.add_update_listener(async_update_listener))
     return True
@@ -117,12 +139,26 @@ async def async_update_listener(hass: HomeAssistant, entry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def make_handler(hass: HomeAssistant, entry_id: str):
+def make_action_handler(hass: HomeAssistant, entry_id: str):
     @callback
     async def handler(msg) -> None:
         action = extract_action(msg.payload)
         if action:
             await handle_action(hass, entry_id, action)
+    return handler
+
+
+def make_bridge_devices_handler(hass: HomeAssistant, entry_id: str):
+    @callback
+    async def handler(msg) -> None:
+        store = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry_id)
+        if not store:
+            return
+        payload = msg.payload.decode("utf-8", "ignore") if isinstance(msg.payload, bytes) else str(msg.payload)
+        actions = actions_from_bridge_devices(payload, store.get("remote", ""))
+        if actions:
+            store["discovered_actions"] = actions
+            _LOGGER.info("Room Remote Control discovered actions for %s: %s", store.get("remote"), ", ".join(actions))
     return handler
 
 
