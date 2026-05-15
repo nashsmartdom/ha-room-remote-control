@@ -1,0 +1,32 @@
+{
+  "title": "Room Remote Control",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Пульт комнаты",
+        "description": "Создание комнатного пульта с управлением через MQTT actions от Zigbee2MQTT.",
+        "data": {
+          "name": "Название",
+          "topics_text": "MQTT topics для actions",
+          "lights": "Лампы комнаты",
+          "extra_off": "Дополнительные лампы только для all_off",
+          "buttons_text": "Правила кнопок"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Настройки пульта комнаты",
+        "description": "Изменение MQTT topics, выбранных ламп и правил кнопок.",
+        "data": {
+          "topics_text": "MQTT topics для actions",
+          "lights": "Лампы комнаты",
+          "extra_off": "Дополнительные лампы только для all_off",
+          "buttons_text": "Правила кнопок"
+        }
+      }
+    }
+  }
+}
