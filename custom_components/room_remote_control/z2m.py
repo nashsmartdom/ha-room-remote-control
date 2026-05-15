@@ -6,10 +6,14 @@ from typing import Any
 
 def devices_from_bridge_payload(payload: str) -> list[dict[str, Any]]:
     try:
-        devices = json.loads(payload)
+        obj = json.loads(payload)
     except ValueError:
         return []
-    return devices if isinstance(devices, list) else []
+    if isinstance(obj, list):
+        return obj
+    if isinstance(obj, dict) and isinstance(obj.get("data"), list):
+        return obj["data"]
+    return []
 
 
 def remote_names_from_bridge_devices(payload: str) -> list[str]:
