@@ -5,38 +5,48 @@ import logging
 from typing import Any
 
 from homeassistant.components import mqtt
-from homeassistant.const import CONF_ENTITY_ID
+from homeassistant.const import CONF_ENTITY_ID, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
 from .config_flow import CONF_BUTTONS_TEXT, CONF_EXTRA_OFF, CONF_LIGHTS, CONF_TOPICS_TEXT
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-BRIGHTNESS_CYCLE = [30, 10, 100, 80]
+
+def lines(text: str) -> list[str]:
+    return [x.strip() for x in str(text or "").splitlines() if x.strip()]
 
 
-def parse_lines(text: str) -> list[str]:
-    return [line.strip() for line in str(text or "").splitlines() if line.strip()]
+def csv(text: str) -> list[str]:
+    return [x.strip() for x in str(text or "").split(",") if x.strip()]
+
+
+def ints(text: str) -> list[int]:
+    return [int(x.strip()) for x in str(text or "").split(",") if x.strip()]
 
 
 def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
-    result: dict[str, dict[str, Any]] = {}
-    for line in parse_lines(text):
-        if "=" not in line:
+    out: dict[str, dict[str, Any]] = {}
+    for row in lines(text):
+        if "=" not in row:
             continue
-        button, spec = line.split("=", 1)
-        button = button.strip()
-        spec = spec.strip()
-        if spec.startswith("cycle:"):
-            entities = [x.strip() for x in spec.removeprefix("cycle:").split(",") if x.strip()]
-            result[button] = {"type": "cycle", "entities": entities}
-        elif spec.startswith("effect:"):
-            effect = spec.removeprefix("effect:").strip()
-            result[button] = {"type": "effect", "effect": effect}
-        elif spec in {"all_on", "all_off", "next_effect"}:
-            result[button] = {"type": spec}
-    return result
+        key, spec = [x.strip() for x in row.split("=", 1)]
+        parts = spec.split(":", 2)
+        cmd = parts[0].strip()
+        if cmd in {"all_on", "all_off", "next_effect"}:
+            out[key] = {"type": cmd}
+        elif cmd in {"target", "turn_on", "turn_off", "toggle"} and len(parts) > 1:
+            out[key] = {"type": cmd, "entities": csv(parts[1])}
+        elif cmd == "brightness" and len(parts) > 1:
+            out[key] = {"type": "brightness", "step": int(parts[1]), "entities": csv(parts[2]) if len(parts) > 2 else []}
+        elif cmd == "kelvin" and len(parts) > 1:
+            out[key] = {"type": "kelvin", "step": int(parts[1]), "entities": csv(parts[2]) if len(parts) > 2 else []}
+        elif cmd == "cycle_brightness" and len(parts) > 1:
+            out[key] = {"type": "cycle_brightness", "values": ints(parts[1]), "entities": csv(parts[2]) if len(parts) > 2 else []}
+        elif cmd == "effect" and len(parts) > 1:
+            out[key] = {"type": "effect", "effect": parts[1].strip(), "entities": csv(parts[2]) if len(parts) > 2 else []}
+    return out
 
 
 def extract_action(payload: Any) -> str | None:
@@ -56,21 +66,20 @@ def extract_action(payload: Any) -> str | None:
 
 async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
     data = {**entry.data, **entry.options}
-    store = hass.data.setdefault(DOMAIN, {"entries": {}})
-    entry_store = {
+    root = hass.data.setdefault(DOMAIN, {"entries": {}})
+    store = {
         "unsub": [],
-        "active_lamps": list(data.get(CONF_LIGHTS, [])),
-        "brightness_index": {},
-        "effect_index": {},
-        "buttons": parse_buttons(data.get(CONF_BUTTONS_TEXT, "")),
         "lights": list(data.get(CONF_LIGHTS, [])),
         "extra_off": list(data.get(CONF_EXTRA_OFF, [])),
+        "active": list(data.get(CONF_LIGHTS, [])),
+        "buttons": parse_buttons(data.get(CONF_BUTTONS_TEXT, "")),
+        "idx": {},
     }
-    store["entries"][entry.entry_id] = entry_store
+    root["entries"][entry.entry_id] = store
 
-    for topic in parse_lines(data.get(CONF_TOPICS_TEXT, "")):
+    for topic in lines(data.get(CONF_TOPICS_TEXT, "")):
         unsub = await mqtt.async_subscribe(hass, topic, make_handler(hass, entry.entry_id), 0)
-        entry_store["unsub"].append(unsub)
+        store["unsub"].append(unsub)
         _LOGGER.info("Room Remote Control subscribed to %s", topic)
 
     entry.async_on_unload(entry.add_update_listener(async_update_listener))
@@ -96,8 +105,11 @@ def make_handler(hass: HomeAssistant, entry_id: str):
         action = extract_action(msg.payload)
         if action:
             await handle_action(hass, entry_id, action)
-
     return handler
+
+
+def targets(store: dict[str, Any], button: dict[str, Any]) -> list[str]:
+    return list(button.get("entities") or store.get("active") or store.get("lights") or [])
 
 
 async def handle_action(hass: HomeAssistant, entry_id: str, action: str) -> None:
@@ -110,75 +122,138 @@ async def handle_action(hass: HomeAssistant, entry_id: str, action: str) -> None
         return
 
     typ = button["type"]
-    if typ == "cycle":
-        entities = list(button.get("entities", []))
-        idx = store["brightness_index"].get(action, 0)
-        pct = BRIGHTNESS_CYCLE[idx % len(BRIGHTNESS_CYCLE)]
-        store["brightness_index"][action] = idx + 1
-        store["active_lamps"] = entities
-        await call_light(hass, "turn_on", entities, brightness_pct=pct)
-        return
+    ents = targets(store, button)
 
-    if typ == "all_on":
-        entities = list(store["lights"])
-        store["active_lamps"] = entities
-        await call_light(hass, "turn_on", entities, brightness_pct=80, color_temp=435)
-        return
-
-    if typ == "all_off":
+    if typ == "target":
+        store["active"] = list(button.get("entities", []))
+    elif typ == "turn_on":
+        store["active"] = ents
+        await call_light(hass, "turn_on", ents)
+    elif typ == "turn_off":
+        await call_light(hass, "turn_off", ents)
+    elif typ == "toggle":
+        store["active"] = ents
+        await call_light(hass, "toggle", ents)
+    elif typ == "all_on":
+        store["active"] = list(store["lights"])
+        await call_light(hass, "turn_on", list(store["lights"]))
+    elif typ == "all_off":
         await call_light(hass, "turn_off", list(store["lights"]) + list(store["extra_off"]))
+    elif typ == "brightness":
+        await step_brightness(hass, ents, int(button["step"]))
+    elif typ == "kelvin":
+        await step_kelvin(hass, ents, int(button["step"]))
+    elif typ == "cycle_brightness":
+        await cycle_brightness(hass, store, action, ents, list(button.get("values") or []))
+    elif typ == "effect":
+        await set_effect(hass, ents, button.get("effect"))
+    elif typ == "next_effect":
+        await next_effect(hass, store, action, ents)
+
+
+async def step_brightness(hass: HomeAssistant, ents: list[str], step: int) -> None:
+    for ent in ents:
+        cur = brightness_pct(hass, ent)
+        if cur is None:
+            continue
+        new = max(0, min(100, cur + step))
+        if new == 0:
+            await call_light(hass, "turn_off", [ent])
+        else:
+            await call_light(hass, "turn_on", [ent], brightness_pct=new)
+
+
+async def cycle_brightness(hass: HomeAssistant, store: dict[str, Any], action: str, ents: list[str], values: list[int]) -> None:
+    vals = [max(1, min(100, int(v))) for v in values]
+    if not vals:
         return
-
-    if typ == "effect":
-        entities = list(store["active_lamps"] or store["lights"])
-        await apply_named_effect(hass, entities, button.get("effect"))
-        return
-
-    if typ == "next_effect":
-        entities = list(store["active_lamps"] or store["lights"])
-        await apply_next_entity_effect(hass, store, action, entities)
-        return
+    i = store["idx"].get(action, 0)
+    store["idx"][action] = i + 1
+    await call_light(hass, "turn_on", ents, brightness_pct=vals[i % len(vals)])
 
 
-async def apply_named_effect(hass: HomeAssistant, entities: list[str], effect: str | None) -> None:
+async def step_kelvin(hass: HomeAssistant, ents: list[str], step: int) -> None:
+    for ent in ents:
+        cur = kelvin(hass, ent)
+        bounds = kelvin_bounds(hass, ent)
+        if cur is None or bounds is None:
+            continue
+        lo, hi = bounds
+        await call_light(hass, "turn_on", [ent], color_temp_kelvin=max(lo, min(hi, cur + step)))
+
+
+def brightness_pct(hass: HomeAssistant, ent: str) -> int | None:
+    st = hass.states.get(ent)
+    if not st:
+        return None
+    raw = st.attributes.get("brightness")
+    if raw is not None:
+        return round(int(raw) * 100 / 255)
+    return 100 if st.state == STATE_ON else 0
+
+
+def kelvin(hass: HomeAssistant, ent: str) -> int | None:
+    st = hass.states.get(ent)
+    if not st:
+        return None
+    if st.attributes.get("color_temp_kelvin") is not None:
+        return int(st.attributes["color_temp_kelvin"])
+    if st.attributes.get("color_temp"):
+        return round(1_000_000 / int(st.attributes["color_temp"]))
+    b = kelvin_bounds(hass, ent)
+    return round((b[0] + b[1]) / 2) if b else None
+
+
+def kelvin_bounds(hass: HomeAssistant, ent: str) -> tuple[int, int] | None:
+    st = hass.states.get(ent)
+    if not st:
+        return None
+    mn = st.attributes.get("min_color_temp_kelvin")
+    mx = st.attributes.get("max_color_temp_kelvin")
+    if mn is not None and mx is not None:
+        return int(mn), int(mx)
+    min_mired = st.attributes.get("min_mireds")
+    max_mired = st.attributes.get("max_mireds")
+    if min_mired is not None and max_mired is not None:
+        a = round(1_000_000 / int(min_mired))
+        b = round(1_000_000 / int(max_mired))
+        return min(a, b), max(a, b)
+    return None
+
+
+def effects(hass: HomeAssistant, ent: str) -> list[str]:
+    st = hass.states.get(ent)
+    if not st:
+        return []
+    return [str(x) for x in st.attributes.get("effect_list") or []]
+
+
+async def set_effect(hass: HomeAssistant, ents: list[str], effect: str | None) -> None:
     if not effect:
         return
-    supported = [entity for entity in entities if effect in get_effect_list(hass, entity)]
+    supported = [ent for ent in ents if effect in effects(hass, ent)]
     await call_light(hass, "turn_on", supported, effect=effect)
 
 
-async def apply_next_entity_effect(hass: HomeAssistant, store: dict[str, Any], action: str, entities: list[str]) -> None:
-    common = common_effects(hass, entities)
-    if not common:
-        return
-    idx = store["effect_index"].get(action, 0)
-    effect = common[idx % len(common)]
-    store["effect_index"][action] = idx + 1
-    await call_light(hass, "turn_on", entities, effect=effect)
-
-
-def get_effect_list(hass: HomeAssistant, entity: str) -> list[str]:
-    state = hass.states.get(entity)
-    if not state:
-        return []
-    effects = state.attributes.get("effect_list") or []
-    return [str(item) for item in effects]
-
-
-def common_effects(hass: HomeAssistant, entities: list[str]) -> list[str]:
-    lists = [get_effect_list(hass, entity) for entity in entities]
-    lists = [items for items in lists if items]
+async def next_effect(hass: HomeAssistant, store: dict[str, Any], action: str, ents: list[str]) -> None:
+    lists = [effects(hass, ent) for ent in ents]
+    lists = [x for x in lists if x]
     if not lists:
-        return []
-    common = set(lists[0])
-    for items in lists[1:]:
-        common &= set(items)
-    return [effect for effect in lists[0] if effect in common]
-
-
-async def call_light(hass: HomeAssistant, service: str, entities: list[str], **kwargs: Any) -> None:
-    if not entities:
         return
-    data = {CONF_ENTITY_ID: entities}
-    data.update({k: v for k, v in kwargs.items() if v is not None})
+    common = set(lists[0])
+    for item in lists[1:]:
+        common &= set(item)
+    ordered = [x for x in lists[0] if x in common]
+    if not ordered:
+        return
+    i = store["idx"].get(action, 0)
+    store["idx"][action] = i + 1
+    await call_light(hass, "turn_on", ents, effect=ordered[i % len(ordered)])
+
+
+async def call_light(hass: HomeAssistant, service: str, ents: list[str], **kw: Any) -> None:
+    if not ents:
+        return
+    data = {CONF_ENTITY_ID: ents}
+    data.update({k: v for k, v in kw.items() if v is not None})
     await hass.services.async_call("light", service, data, blocking=False)
