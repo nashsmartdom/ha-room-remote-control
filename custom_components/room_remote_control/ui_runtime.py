@@ -9,7 +9,7 @@ from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
-from .config_flow import CONF_BUTTONS_TEXT, CONF_EFFECTS_TEXT, CONF_EXTRA_OFF, CONF_LIGHTS, CONF_TOPICS_TEXT
+from .config_flow import CONF_BUTTONS_TEXT, CONF_EXTRA_OFF, CONF_LIGHTS, CONF_TOPICS_TEXT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,24 +31,12 @@ def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
         if spec.startswith("cycle:"):
             entities = [x.strip() for x in spec.removeprefix("cycle:").split(",") if x.strip()]
             result[button] = {"type": "cycle", "entities": entities}
+        elif spec.startswith("effect:"):
+            effect = spec.removeprefix("effect:").strip()
+            result[button] = {"type": "effect", "effect": effect}
         elif spec in {"all_on", "all_off", "next_effect"}:
             result[button] = {"type": spec}
     return result
-
-
-def parse_effects(text: str) -> list[dict[str, Any]]:
-    effects: list[dict[str, Any]] = []
-    for line in parse_lines(text):
-        parts = [p.strip() for p in line.split("|")]
-        if not parts or not parts[0]:
-            continue
-        item: dict[str, Any] = {"effect": parts[0]}
-        if len(parts) > 1 and parts[1]:
-            item["brightness_pct"] = int(parts[1])
-        if len(parts) > 2 and parts[2]:
-            item["color_temp"] = int(parts[2])
-        effects.append(item)
-    return effects
 
 
 def extract_action(payload: Any) -> str | None:
@@ -73,9 +61,8 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
         "unsub": [],
         "active_lamps": list(data.get(CONF_LIGHTS, [])),
         "brightness_index": {},
-        "effect_index": 0,
+        "effect_index": {},
         "buttons": parse_buttons(data.get(CONF_BUTTONS_TEXT, "")),
-        "effects": parse_effects(data.get(CONF_EFFECTS_TEXT, "")),
         "lights": list(data.get(CONF_LIGHTS, [])),
         "extra_off": list(data.get(CONF_EXTRA_OFF, [])),
     }
@@ -142,15 +129,51 @@ async def handle_action(hass: HomeAssistant, entry_id: str, action: str) -> None
         await call_light(hass, "turn_off", list(store["lights"]) + list(store["extra_off"]))
         return
 
-    if typ == "next_effect":
-        effects = store["effects"]
-        if not effects:
-            return
-        idx = store["effect_index"]
-        effect = effects[idx % len(effects)]
-        store["effect_index"] = idx + 1
+    if typ == "effect":
         entities = list(store["active_lamps"] or store["lights"])
-        await call_light(hass, "turn_on", entities, **effect)
+        await apply_named_effect(hass, entities, button.get("effect"))
+        return
+
+    if typ == "next_effect":
+        entities = list(store["active_lamps"] or store["lights"])
+        await apply_next_entity_effect(hass, store, action, entities)
+        return
+
+
+async def apply_named_effect(hass: HomeAssistant, entities: list[str], effect: str | None) -> None:
+    if not effect:
+        return
+    supported = [entity for entity in entities if effect in get_effect_list(hass, entity)]
+    await call_light(hass, "turn_on", supported, effect=effect)
+
+
+async def apply_next_entity_effect(hass: HomeAssistant, store: dict[str, Any], action: str, entities: list[str]) -> None:
+    common = common_effects(hass, entities)
+    if not common:
+        return
+    idx = store["effect_index"].get(action, 0)
+    effect = common[idx % len(common)]
+    store["effect_index"][action] = idx + 1
+    await call_light(hass, "turn_on", entities, effect=effect)
+
+
+def get_effect_list(hass: HomeAssistant, entity: str) -> list[str]:
+    state = hass.states.get(entity)
+    if not state:
+        return []
+    effects = state.attributes.get("effect_list") or []
+    return [str(item) for item in effects]
+
+
+def common_effects(hass: HomeAssistant, entities: list[str]) -> list[str]:
+    lists = [get_effect_list(hass, entity) for entity in entities]
+    lists = [items for items in lists if items]
+    if not lists:
+        return []
+    common = set(lists[0])
+    for items in lists[1:]:
+        common &= set(items)
+    return [effect for effect in lists[0] if effect in common]
 
 
 async def call_light(hass: HomeAssistant, service: str, entities: list[str], **kwargs: Any) -> None:
