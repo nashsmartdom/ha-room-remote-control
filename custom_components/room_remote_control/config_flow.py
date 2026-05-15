@@ -15,20 +15,14 @@ CONF_LIGHTS = "lights"
 CONF_EXTRA_OFF = "extra_off"
 CONF_BUTTONS_TEXT = "buttons_text"
 
-DEFAULT_BUTTONS = """on=cycle:light.wiz_3
-arrow_left_click=cycle:light.wiz_7
-arrow_right_click=cycle:light.wiz_al_1,light.wiz_4
-arrow_up_click=all_on
-brightness_move_up=all_on
-brightness_step_up=all_on
-up=all_on
-arrow_down_click=all_off
-brightness_move_down=all_off
-brightness_step_down=all_off
-down=all_off
-off_hold=all_off
-off=all_off
-arrow_right_hold=next_effect"""
+DEFAULT_BUTTONS = """button_1=target:light.example_1
+button_2=toggle:light.example_1
+button_3=brightness:+10
+button_4=brightness:-10
+button_5=kelvin:+300
+button_6=kelvin:-300
+button_7=next_effect
+button_8=all_off"""
 
 class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -42,10 +36,10 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_NAME, default="alisa_spinne"): str,
-                vol.Required(CONF_TOPICS_TEXT, default="zigbee2mqtt/licht_alisa\nzigbee2mqtt/licht_alisa/action"): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-                vol.Required(CONF_LIGHTS, default=["light.wiz_3", "light.wiz_7", "light.wiz_al_1", "light.wiz_4"]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Optional(CONF_EXTRA_OFF, default=["light.hochbett"]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
+                vol.Required(CONF_NAME, default="Room remote"): str,
+                vol.Required(CONF_TOPICS_TEXT, default="zigbee2mqtt/remote_name/action"): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+                vol.Required(CONF_LIGHTS, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
+                vol.Optional(CONF_EXTRA_OFF, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
                 vol.Required(CONF_BUTTONS_TEXT, default=DEFAULT_BUTTONS): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
             }
         )
