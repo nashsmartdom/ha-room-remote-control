@@ -1,0 +1,32 @@
+{
+  "title": "Room Remote Control",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Room remote",
+        "description": "Create a room remote controlled by MQTT actions from Zigbee2MQTT.",
+        "data": {
+          "name": "Name",
+          "topics_text": "MQTT action topics",
+          "lights": "Room lights",
+          "extra_off": "Additional lights for all_off only",
+          "buttons_text": "Button rules"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Room remote options",
+        "description": "Edit MQTT topics, light selection and button rules.",
+        "data": {
+          "topics_text": "MQTT action topics",
+          "lights": "Room lights",
+          "extra_off": "Additional lights for all_off only",
+          "buttons_text": "Button rules"
+        }
+      }
+    }
+  }
+}
