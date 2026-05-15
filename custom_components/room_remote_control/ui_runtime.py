@@ -8,7 +8,14 @@ from homeassistant.components import mqtt
 from homeassistant.const import CONF_ENTITY_ID, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 
-from .config_flow import CONF_BUTTONS_TEXT, CONF_EXTRA_OFF, CONF_LIGHTS, CONF_TOPICS_TEXT
+from .config_flow import (
+    CONF_BUTTONS_TEXT,
+    CONF_EXTRA_OFF,
+    CONF_LIGHTS,
+    CONF_MQTT_BASE_TOPIC,
+    CONF_REMOTE_FRIENDLY_NAME,
+    CONF_TOPICS_TEXT,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,6 +31,17 @@ def csv(text: str) -> list[str]:
 
 def ints(text: str) -> list[int]:
     return [int(x.strip()) for x in str(text or "").split(",") if x.strip()]
+
+
+def topics_from_config(data: dict[str, Any]) -> list[str]:
+    topics: list[str] = []
+    base = str(data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")).strip().strip("/")
+    remote = str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
+    if base and remote:
+        topics.append(f"{base}/{remote}")
+        topics.append(f"{base}/{remote}/action")
+    topics.extend(lines(data.get(CONF_TOPICS_TEXT, "")))
+    return list(dict.fromkeys(topics))
 
 
 def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
@@ -77,7 +95,7 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
     }
     root["entries"][entry.entry_id] = store
 
-    for topic in lines(data.get(CONF_TOPICS_TEXT, "")):
+    for topic in topics_from_config(data):
         unsub = await mqtt.async_subscribe(hass, topic, make_handler(hass, entry.entry_id), 0)
         store["unsub"].append(unsub)
         _LOGGER.info("Room Remote Control subscribed to %s", topic)
