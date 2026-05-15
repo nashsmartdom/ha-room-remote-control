@@ -5,6 +5,7 @@ CONF_LAMPS = "lamps"
 CONF_EXTRA_OFF = "extra_off"
 CONF_ACTIONS = "actions"
 CONF_EFFECTS = "effects"
+CONF_ENTITIES = "entities"
 CONF_BRIGHTNESS_CYCLE = "brightness_cycle"
 
 DEFAULT_BRIGHTNESS_CYCLE = [30, 10, 100, 80]
