@@ -4,14 +4,28 @@ import json
 from typing import Any
 
 
-def actions_from_bridge_devices(payload: str, friendly_name: str) -> list[str]:
+def devices_from_bridge_payload(payload: str) -> list[dict[str, Any]]:
     try:
         devices = json.loads(payload)
     except ValueError:
         return []
-    if not isinstance(devices, list):
-        return []
-    for device in devices:
+    return devices if isinstance(devices, list) else []
+
+
+def remote_names_from_bridge_devices(payload: str) -> list[str]:
+    names: list[str] = []
+    for device in devices_from_bridge_payload(payload):
+        if not isinstance(device, dict):
+            continue
+        name = device.get("friendly_name")
+        exposes = ((device.get("definition") or {}).get("exposes") or [])
+        if name and _find_actions(exposes):
+            names.append(str(name))
+    return sorted(set(names))
+
+
+def actions_from_bridge_devices(payload: str, friendly_name: str) -> list[str]:
+    for device in devices_from_bridge_payload(payload):
         if isinstance(device, dict) and device.get("friendly_name") == friendly_name:
             exposes = ((device.get("definition") or {}).get("exposes") or [])
             return sorted(set(_find_actions(exposes)))
