@@ -26,6 +26,24 @@ button_6=kelvin:-300
 button_7=next_effect
 button_8=all_off"""
 
+
+def discovered_actions_for_entry(hass, entry_id: str) -> list[str]:
+    return list(
+        hass.data.get(DOMAIN, {})
+        .get("entries", {})
+        .get(entry_id, {})
+        .get("discovered_actions", [])
+    )
+
+
+def rules_template(actions: list[str], current: str) -> str:
+    if current and "button_1=" not in current:
+        return current
+    if not actions:
+        return current or DEFAULT_BUTTONS
+    return "\n".join(f"{action}=target:light.example_1" for action in actions)
+
+
 class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -53,6 +71,7 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         return RoomRemoteControlOptionsFlow(config_entry)
 
+
 class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry):
         self.config_entry = config_entry
@@ -62,6 +81,13 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        actions = discovered_actions_for_entry(self.hass, self.config_entry.entry_id)
+        current_rules = data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS)
+        default_rules = rules_template(actions, current_rules)
+        description = "No Zigbee2MQTT actions discovered yet. Press buttons on the remote or wait for bridge/devices."
+        if actions:
+            description = "Discovered Zigbee2MQTT actions: " + ", ".join(actions)
+
         schema = vol.Schema(
             {
                 vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
@@ -69,7 +95,7 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required(CONF_LIGHTS, default=data.get(CONF_LIGHTS, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
                 vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Required(CONF_BUTTONS_TEXT, default=data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS)): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+                vol.Required(CONF_BUTTONS_TEXT, default=default_rules): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, description_placeholders={"discovered_actions": description})
