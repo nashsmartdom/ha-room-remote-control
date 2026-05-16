@@ -47,7 +47,6 @@ def action_topics(data: dict[str, Any]) -> list[str]:
     base = base_topic(data)
     remote = remote_name(data)
     if base and remote:
-        topics.append(f"{base}/{remote}")
         topics.append(f"{base}/{remote}/action")
     topics.extend(lines(data.get(CONF_TOPICS_TEXT, "")))
     return list(dict.fromkeys(topics))
@@ -96,11 +95,11 @@ def extract_action(payload: Any) -> str | None:
         return None
     try:
         obj = json.loads(text)
-        if isinstance(obj, dict) and obj.get("action"):
-            return str(obj["action"]).strip()
     except ValueError:
-        pass
-    return text
+        return text
+    if isinstance(obj, dict) and obj.get("action"):
+        return str(obj["action"]).strip()
+    return None
 
 
 async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
