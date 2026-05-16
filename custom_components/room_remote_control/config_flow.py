@@ -16,15 +16,24 @@ CONF_TOPICS_TEXT = "topics_text"
 CONF_LIGHTS = "lights"
 CONF_EXTRA_OFF = "extra_off"
 CONF_BUTTONS_TEXT = "buttons_text"
+MAP_PREFIX = "map__"
 
-DEFAULT_BUTTONS = """button_1=target:light.example_1
-button_2=toggle:light.example_1
-button_3=brightness:+10
-button_4=brightness:-10
-button_5=kelvin:+300
-button_6=kelvin:-300
-button_7=next_effect
-button_8=all_off"""
+DEFAULT_BUTTONS = "# fallback rules, optional"
+
+BASE_COMMANDS = {
+    "ignore": "Ignore",
+    "target": "Set active lights",
+    "turn_on": "Turn on",
+    "turn_off": "Turn off",
+    "toggle": "Toggle",
+    "all_on": "All on",
+    "all_off": "All off",
+    "brightness:+10": "Brightness +10%",
+    "brightness:-10": "Brightness -10%",
+    "kelvin:-300": "Warmer",
+    "kelvin:+300": "Cooler",
+    "next_effect": "Next effect",
+}
 
 
 def light_selector():
@@ -39,12 +48,23 @@ def discovered_actions_for_entry(hass, entry_id: str) -> list[str]:
     return list(hass.data.get(DOMAIN, {}).get("entries", {}).get(entry_id, {}).get("discovered_actions", []))
 
 
-def rules_template(actions: list[str], current: str) -> str:
-    if current and "button_1=" not in current:
-        return current
-    if not actions:
-        return current or DEFAULT_BUTTONS
-    return "\n".join(f"{action}=target:light.example_1" for action in actions)
+def map_field(action: str) -> str:
+    return f"{MAP_PREFIX}{action}"
+
+
+def effect_options(hass, lights: list[str]) -> dict[str, str]:
+    out = dict(BASE_COMMANDS)
+    seen: set[str] = set()
+    for entity in lights:
+        state = hass.states.get(entity)
+        if not state:
+            continue
+        for effect in state.attributes.get("effect_list") or []:
+            effect = str(effect)
+            if effect not in seen:
+                seen.add(effect)
+                out[f"effect:{effect}"] = f"Effect: {effect}"
+    return out
 
 
 class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -63,7 +83,7 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_TOPICS_TEXT, default=""): text_selector(),
             vol.Required(CONF_LIGHTS, default=[]): light_selector(),
             vol.Optional(CONF_EXTRA_OFF, default=[]): light_selector(),
-            vol.Required(CONF_BUTTONS_TEXT, default=DEFAULT_BUTTONS): text_selector(),
+            vol.Optional(CONF_BUTTONS_TEXT, default=DEFAULT_BUTTONS): text_selector(),
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors={})
 
@@ -82,13 +102,20 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         actions = discovered_actions_for_entry(self.hass, self._entry.entry_id)
-        default_rules = rules_template(actions, data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS))
-        schema = vol.Schema({
+        lights = list(data.get(CONF_LIGHTS, []))
+        commands = effect_options(self.hass, lights)
+
+        fields: dict[Any, Any] = {
             vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
             vol.Required(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
             vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): text_selector(),
-            vol.Required(CONF_LIGHTS, default=data.get(CONF_LIGHTS, [])): light_selector(),
+            vol.Required(CONF_LIGHTS, default=lights): light_selector(),
             vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): light_selector(),
-            vol.Required(CONF_BUTTONS_TEXT, default=default_rules): text_selector(),
-        })
-        return self.async_show_form(step_id="init", data_schema=schema, errors={})
+        }
+        for action in actions:
+            current = str(data.get(map_field(action), "ignore"))
+            if current not in commands:
+                current = "ignore"
+            fields[vol.Optional(map_field(action), default=current)] = vol.In(commands)
+        fields[vol.Optional(CONF_BUTTONS_TEXT, default=data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS))] = text_selector()
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields), errors={})
