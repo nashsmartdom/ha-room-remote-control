@@ -10,6 +10,7 @@ from homeassistant.helpers import selector
 
 from .const import DOMAIN
 
+CONF_REMOTE_ENTITY_ID = "remote_entity_id"
 CONF_MQTT_BASE_TOPIC = "mqtt_base_topic"
 CONF_REMOTE_FRIENDLY_NAME = "remote_friendly_name"
 CONF_TOPICS_TEXT = "topics_text"
@@ -34,6 +35,10 @@ BASE_COMMANDS = {
     "kelvin:+300": "Cooler",
     "next_effect": "Next effect",
 }
+
+
+def entity_selector():
+    return selector.EntitySelector()
 
 
 def light_selector():
@@ -78,8 +83,9 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema({
             vol.Required(CONF_NAME, default="Room remote"): str,
+            vol.Optional(CONF_REMOTE_ENTITY_ID): entity_selector(),
             vol.Required(CONF_MQTT_BASE_TOPIC, default="zigbee2mqtt"): str,
-            vol.Required(CONF_REMOTE_FRIENDLY_NAME, default="remote_name"): str,
+            vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=""): str,
             vol.Optional(CONF_TOPICS_TEXT, default=""): text_selector(),
             vol.Required(CONF_LIGHTS, default=[]): light_selector(),
             vol.Optional(CONF_EXTRA_OFF, default=[]): light_selector(),
@@ -106,8 +112,9 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
         commands = effect_options(self.hass, lights)
 
         fields: dict[Any, Any] = {
+            vol.Optional(CONF_REMOTE_ENTITY_ID, default=data.get(CONF_REMOTE_ENTITY_ID, "")): entity_selector(),
             vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
-            vol.Required(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
+            vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
             vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): text_selector(),
             vol.Required(CONF_LIGHTS, default=lights): light_selector(),
             vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): light_selector(),
@@ -118,4 +125,10 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
                 current = "ignore"
             fields[vol.Optional(map_field(action), default=current)] = vol.In(commands)
         fields[vol.Optional(CONF_BUTTONS_TEXT, default=data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS))] = text_selector()
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields), errors={})
+        found = ", ".join(actions) if actions else "No actions discovered yet. Press remote buttons, wait a few seconds, then reopen Configure."
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(fields),
+            errors={},
+            description_placeholders={"discovered_actions": found},
+        )
