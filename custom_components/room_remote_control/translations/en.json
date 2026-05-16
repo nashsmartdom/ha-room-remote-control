@@ -7,13 +7,12 @@
         "description": "Create a room remote controlled by MQTT actions from Zigbee2MQTT.",
         "data": {
           "name": "Name",
-          "remote_device_id": "Remote device",
           "mqtt_base_topic": "MQTT base topic",
-          "remote_friendly_name": "Remote friendly name fallback",
+          "remote_friendly_name": "Remote friendly name",
           "topics_text": "Manual MQTT action topics",
           "lights": "Room lights",
           "extra_off": "Additional lights for all_off only",
-          "buttons_text": "Button rules"
+          "buttons_text": "Advanced fallback rules"
         }
       }
     }
@@ -22,15 +21,14 @@
     "step": {
       "init": {
         "title": "Room remote options",
-        "description": "{discovered_actions}\n\nEdit MQTT topics, light selection and button rules.",
+        "description": "Edit MQTT settings, room lights and button mappings. After remote actions are discovered, each action is shown as a separate dropdown.",
         "data": {
-          "remote_device_id": "Remote device",
           "mqtt_base_topic": "MQTT base topic",
-          "remote_friendly_name": "Remote friendly name fallback",
+          "remote_friendly_name": "Remote friendly name",
           "topics_text": "Manual MQTT action topics",
           "lights": "Room lights",
           "extra_off": "Additional lights for all_off only",
-          "buttons_text": "Button rules"
+          "buttons_text": "Advanced fallback rules"
         }
       }
     }
