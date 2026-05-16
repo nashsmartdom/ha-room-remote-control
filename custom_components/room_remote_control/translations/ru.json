@@ -7,13 +7,12 @@
         "description": "Создание комнатного пульта с управлением через MQTT actions от Zigbee2MQTT.",
         "data": {
           "name": "Название",
-          "remote_device_id": "Пульт как устройство Home Assistant",
           "mqtt_base_topic": "MQTT base topic",
-          "remote_friendly_name": "Friendly name пульта, если автоопределение не сработало",
+          "remote_friendly_name": "Friendly name пульта",
           "topics_text": "Ручные MQTT topics для actions",
           "lights": "Лампы комнаты",
           "extra_off": "Дополнительные лампы только для all_off",
-          "buttons_text": "Правила кнопок"
+          "buttons_text": "Расширенные правила вручную"
         }
       }
     }
@@ -22,15 +21,14 @@
     "step": {
       "init": {
         "title": "Настройки пульта комнаты",
-        "description": "{discovered_actions}\n\nИзменение MQTT topics, выбранных ламп и правил кнопок.",
+        "description": "Изменение MQTT, выбранных ламп и привязок кнопок. После обнаружения actions каждая кнопка показывается отдельным выпадающим списком.",
         "data": {
-          "remote_device_id": "Пульт как устройство Home Assistant",
           "mqtt_base_topic": "MQTT base topic",
-          "remote_friendly_name": "Friendly name пульта, если автоопределение не сработало",
+          "remote_friendly_name": "Friendly name пульта",
           "topics_text": "Ручные MQTT topics для actions",
           "lights": "Лампы комнаты",
           "extra_off": "Дополнительные лампы только для all_off",
-          "buttons_text": "Правила кнопок"
+          "buttons_text": "Расширенные правила вручную"
         }
       }
     }
