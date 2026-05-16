@@ -15,6 +15,7 @@ from .config_flow import (
     CONF_MQTT_BASE_TOPIC,
     CONF_REMOTE_FRIENDLY_NAME,
     CONF_TOPICS_TEXT,
+    MAP_PREFIX,
 )
 from .const import DOMAIN
 from .z2m import actions_from_bridge_devices
@@ -23,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def lines(text: str) -> list[str]:
-    return [x.strip() for x in str(text or "").splitlines() if x.strip()]
+    return [x.strip() for x in str(text or "").splitlines() if x.strip() and not x.strip().startswith("#")]
 
 
 def csv(text: str) -> list[str]:
@@ -64,6 +65,21 @@ def bridge_request_devices_topic(data: dict[str, Any]) -> str | None:
     return f"{base}/bridge/request/devices" if base else None
 
 
+def command_to_button(command: str) -> dict[str, Any] | None:
+    command = str(command or "ignore").strip()
+    if command == "ignore":
+        return None
+    if command in {"target", "turn_on", "turn_off", "toggle", "all_on", "all_off", "next_effect"}:
+        return {"type": command}
+    if command.startswith("brightness:"):
+        return {"type": "brightness", "step": int(command.split(":", 1)[1])}
+    if command.startswith("kelvin:"):
+        return {"type": "kelvin", "step": int(command.split(":", 1)[1])}
+    if command.startswith("effect:"):
+        return {"type": "effect", "effect": command.split(":", 1)[1]}
+    return None
+
+
 def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for row in lines(text):
@@ -85,6 +101,20 @@ def parse_buttons(text: str) -> dict[str, dict[str, Any]]:
         elif cmd == "effect" and len(parts) > 1:
             out[key] = {"type": "effect", "effect": parts[1].strip(), "entities": csv(parts[2]) if len(parts) > 2 else []}
     return out
+
+
+def build_buttons(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    buttons = parse_buttons(data.get(CONF_BUTTONS_TEXT, ""))
+    for key, value in data.items():
+        if not str(key).startswith(MAP_PREFIX):
+            continue
+        action = str(key).removeprefix(MAP_PREFIX)
+        button = command_to_button(str(value))
+        if button is not None:
+            buttons[action] = button
+        elif action in buttons:
+            del buttons[action]
+    return buttons
 
 
 def extract_action(payload: Any) -> str | None:
@@ -111,7 +141,7 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
         "lights": list(data.get(CONF_LIGHTS, [])),
         "extra_off": list(data.get(CONF_EXTRA_OFF, [])),
         "active": list(data.get(CONF_LIGHTS, [])),
-        "buttons": parse_buttons(data.get(CONF_BUTTONS_TEXT, "")),
+        "buttons": build_buttons(data),
         "idx": {},
         "remote": resolved_remote,
         "discovered_actions": [],
@@ -202,7 +232,7 @@ async def handle_action(hass: HomeAssistant, entry_id: str, action: str) -> None
     ents = targets(store, button)
 
     if typ == "target":
-        store["active"] = list(button.get("entities", []))
+        store["active"] = ents
     elif typ == "turn_on":
         store["active"] = ents
         await call_light(hass, "turn_on", ents)
