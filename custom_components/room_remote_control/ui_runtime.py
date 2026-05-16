@@ -172,11 +172,23 @@ async def async_update_listener(hass: HomeAssistant, entry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+def remember_action(hass: HomeAssistant, entry_id: str, action: str) -> None:
+    store = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry_id)
+    if not store:
+        return
+    actions = list(store.get("discovered_actions") or [])
+    if action not in actions:
+        actions.append(action)
+        store["discovered_actions"] = sorted(actions)
+        _LOGGER.info("Room Remote Control learned action from remote press: %s", action)
+
+
 def make_action_handler(hass: HomeAssistant, entry_id: str):
     @callback
     async def handler(msg) -> None:
         action = extract_action(msg.payload)
         if action:
+            remember_action(hass, entry_id, action)
             await handle_action(hass, entry_id, action)
     return handler
 
@@ -190,8 +202,8 @@ def make_bridge_devices_handler(hass: HomeAssistant, entry_id: str):
         payload = msg.payload.decode("utf-8", "ignore") if isinstance(msg.payload, bytes) else str(msg.payload)
         actions = actions_from_bridge_devices(payload, store.get("remote", ""))
         if actions:
-            store["discovered_actions"] = actions
-            _LOGGER.info("Room Remote Control discovered actions for %s: %s", store.get("remote"), ", ".join(actions))
+            store["discovered_actions"] = sorted(set(list(store.get("discovered_actions") or []) + actions))
+            _LOGGER.info("Room Remote Control discovered actions for %s: %s", store.get("remote"), ", ".join(store["discovered_actions"]))
     return handler
 
 
