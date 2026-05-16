@@ -13,6 +13,7 @@ from .config_flow import (
     CONF_EXTRA_OFF,
     CONF_LIGHTS,
     CONF_MQTT_BASE_TOPIC,
+    CONF_REMOTE_ENTITY_ID,
     CONF_REMOTE_FRIENDLY_NAME,
     CONF_TOPICS_TEXT,
     MAP_PREFIX,
@@ -39,8 +40,20 @@ def base_topic(data: dict[str, Any]) -> str:
     return str(data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")).strip().strip("/")
 
 
+def friendly_from_entity(data: dict[str, Any]) -> str:
+    entity = str(data.get(CONF_REMOTE_ENTITY_ID, "")).strip()
+    if not entity or "." not in entity:
+        return ""
+    name = entity.split(".", 1)[1]
+    for suffix in ("_action", "_battery", "_linkquality", "_update", "_identify"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name
+
+
 def remote_name(data: dict[str, Any]) -> str:
-    return str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
+    manual = str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
+    return manual or friendly_from_entity(data).strip("/")
 
 
 def action_topics(data: dict[str, Any]) -> list[str]:
