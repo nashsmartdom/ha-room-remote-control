@@ -28,6 +28,18 @@ button_7=next_effect
 button_8=all_off"""
 
 
+def device_selector():
+    return selector.DeviceSelector(selector.DeviceSelectorConfig())
+
+
+def light_selector():
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True))
+
+
+def multiline_text_selector():
+    return selector.TextSelector(selector.TextSelectorConfig(multiline=True))
+
+
 def discovered_actions_for_entry(hass, entry_id: str) -> list[str]:
     return list(
         hass.data.get(DOMAIN, {})
@@ -49,7 +61,6 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        errors: dict[str, str] = {}
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_NAME])
             self._abort_if_unique_id_configured()
@@ -58,16 +69,16 @@ class RoomRemoteControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default="Room remote"): str,
-                vol.Optional(CONF_REMOTE_DEVICE_ID): selector.DeviceSelector(),
+                vol.Optional(CONF_REMOTE_DEVICE_ID): device_selector(),
                 vol.Required(CONF_MQTT_BASE_TOPIC, default="zigbee2mqtt"): str,
                 vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=""): str,
-                vol.Optional(CONF_TOPICS_TEXT, default=""): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-                vol.Required(CONF_LIGHTS, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Optional(CONF_EXTRA_OFF, default=[]): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Required(CONF_BUTTONS_TEXT, default=DEFAULT_BUTTONS): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+                vol.Optional(CONF_TOPICS_TEXT, default=""): multiline_text_selector(),
+                vol.Required(CONF_LIGHTS, default=[]): light_selector(),
+                vol.Optional(CONF_EXTRA_OFF, default=[]): light_selector(),
+                vol.Required(CONF_BUTTONS_TEXT, default=DEFAULT_BUTTONS): multiline_text_selector(),
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="user", data_schema=schema, errors={})
 
     @staticmethod
     def async_get_options_flow(config_entry):
@@ -84,21 +95,20 @@ class RoomRemoteControlOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         actions = discovered_actions_for_entry(self.hass, self.config_entry.entry_id)
-        current_rules = data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS)
-        default_rules = rules_template(actions, current_rules)
-        description = "No Zigbee2MQTT actions discovered yet. Press buttons on the remote or wait for bridge/devices."
-        if actions:
-            description = "Discovered Zigbee2MQTT actions: " + ", ".join(actions)
+        default_rules = rules_template(actions, data.get(CONF_BUTTONS_TEXT, DEFAULT_BUTTONS))
 
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_REMOTE_DEVICE_ID, default=data.get(CONF_REMOTE_DEVICE_ID)): selector.DeviceSelector(),
-                vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
-                vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
-                vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-                vol.Required(CONF_LIGHTS, default=data.get(CONF_LIGHTS, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
-                vol.Required(CONF_BUTTONS_TEXT, default=default_rules): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-            }
-        )
-        return self.async_show_form(step_id="init", data_schema=schema, description_placeholders={"discovered_actions": description})
+        fields = {
+            vol.Required(CONF_MQTT_BASE_TOPIC, default=data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")): str,
+            vol.Optional(CONF_REMOTE_FRIENDLY_NAME, default=data.get(CONF_REMOTE_FRIENDLY_NAME, "")): str,
+            vol.Optional(CONF_TOPICS_TEXT, default=data.get(CONF_TOPICS_TEXT, "")): multiline_text_selector(),
+            vol.Required(CONF_LIGHTS, default=data.get(CONF_LIGHTS, [])): light_selector(),
+            vol.Optional(CONF_EXTRA_OFF, default=data.get(CONF_EXTRA_OFF, [])): light_selector(),
+            vol.Required(CONF_BUTTONS_TEXT, default=default_rules): multiline_text_selector(),
+        }
+        current_device = data.get(CONF_REMOTE_DEVICE_ID)
+        if current_device:
+            fields[vol.Optional(CONF_REMOTE_DEVICE_ID, default=current_device)] = device_selector()
+        else:
+            fields[vol.Optional(CONF_REMOTE_DEVICE_ID)] = device_selector()
+
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields), errors={})
