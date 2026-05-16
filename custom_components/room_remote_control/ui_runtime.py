@@ -7,14 +7,12 @@ from typing import Any
 from homeassistant.components import mqtt
 from homeassistant.const import CONF_ENTITY_ID, STATE_ON
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 
 from .config_flow import (
     CONF_BUTTONS_TEXT,
     CONF_EXTRA_OFF,
     CONF_LIGHTS,
     CONF_MQTT_BASE_TOPIC,
-    CONF_REMOTE_DEVICE_ID,
     CONF_REMOTE_FRIENDLY_NAME,
     CONF_TOPICS_TEXT,
 )
@@ -40,33 +38,14 @@ def base_topic(data: dict[str, Any]) -> str:
     return str(data.get(CONF_MQTT_BASE_TOPIC, "zigbee2mqtt")).strip().strip("/")
 
 
-def remote_name_from_device(hass: HomeAssistant, device_id: str | None) -> str:
-    if not device_id:
-        return ""
-    registry = dr.async_get(hass)
-    device = registry.async_get(device_id)
-    if not device:
-        return ""
-    name = str(device.name_by_user or device.name or "").strip()
-    if name:
-        return name
-    for _, identifier in device.identifiers:
-        if identifier:
-            return str(identifier).split("/")[-1].removeprefix("zigbee2mqtt_")
-    return ""
+def remote_name(data: dict[str, Any]) -> str:
+    return str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
 
 
-def remote_name(hass: HomeAssistant, data: dict[str, Any]) -> str:
-    manual = str(data.get(CONF_REMOTE_FRIENDLY_NAME, "")).strip().strip("/")
-    if manual:
-        return manual
-    return remote_name_from_device(hass, data.get(CONF_REMOTE_DEVICE_ID)).strip().strip("/")
-
-
-def action_topics(hass: HomeAssistant, data: dict[str, Any]) -> list[str]:
+def action_topics(data: dict[str, Any]) -> list[str]:
     topics: list[str] = []
     base = base_topic(data)
-    remote = remote_name(hass, data)
+    remote = remote_name(data)
     if base and remote:
         topics.append(f"{base}/{remote}")
         topics.append(f"{base}/{remote}/action")
@@ -126,7 +105,7 @@ def extract_action(payload: Any) -> str | None:
 
 async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
     data = {**entry.data, **entry.options}
-    resolved_remote = remote_name(hass, data)
+    resolved_remote = remote_name(data)
     root = hass.data.setdefault(DOMAIN, {"entries": {}})
     store = {
         "unsub": [],
@@ -140,7 +119,7 @@ async def async_setup_entry_runtime(hass: HomeAssistant, entry) -> bool:
     }
     root["entries"][entry.entry_id] = store
 
-    for topic in action_topics(hass, data):
+    for topic in action_topics(data):
         unsub = await mqtt.async_subscribe(hass, topic, make_action_handler(hass, entry.entry_id), 0)
         store["unsub"].append(unsub)
         _LOGGER.info("Room Remote Control subscribed to %s", topic)
